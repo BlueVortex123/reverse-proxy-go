@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -20,16 +21,15 @@ func main() {
 	// getting 403 Forbidden for using only NewSingleHostReverseProxy.
 	// proxy := httputil.NewSingleHostReverseProxy(targetUrl)
 
-	// switching to more complet definition
+	// Switching to more complex definition
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "https",
 		Host:   "jsonplaceholder.typicode.com",
 	})
 
-	// director := proxy.Director
+	director := proxy.Director
 
 	proxy.Director = func(req *http.Request) {
-		// director(req)
 		if req.Method == "GET" {
 			req.URL.Scheme = targetUrl.Scheme // for targe scheme error handling
 			req.URL.Host = targetUrl.Host     // for  http: no Host in request URL error handling
@@ -38,34 +38,40 @@ func main() {
 			req.Host = targetUrl.Host
 
 		}
+		director(req)
+		// req.Header.Add("X-Project-Status", "WorkInProgress")
 		fmt.Println(req.URL)
 	}
 
+	modifyResponse := proxy.ModifyResponse
 	proxy.ModifyResponse = func(resp *http.Response) error {
-		// For some reason the "Content-Type" header is missing here, but is present in the header of browser.
-		// if resp.Header.Get("Content-Type") == "application/json" {
+		if resp.Header.Get("Content-Type") == "application/json; charset=utf-8" {
 
-		// Commenting this conditionals because  the response status in currently 304.
-		// if resp.StatusCode == http.StatusOK {
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
+			// Commenting this conditional because  the response status in currently 304.
+			// if resp.StatusCode == http.StatusOK {
+
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+
+			var data map[string]interface{}
+			err = json.Unmarshal(body, &data)
+			if err != nil {
+				return err //Getting unexpected end of JSON input error.
+			}
+
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return err //Getting EOF
+			}
+
+			// }
+			encodedData, _ := json.Marshal(data)
+			resp.Body = strings.NewReader(string(encodedData)) // getting critical error here
+			resp.Header.Set("Content-Length", string(len(encodedData)))
 		}
-
-		var data interface{}
-		err = json.Unmarshal(body, &data)
-		if err != nil {
-			return err //Getting unexpected end of JSON input error.
-		}
-
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		if err != nil {
-			return err //Getting EOF
-		}
-
-		// }
-		// }
-		return nil
+		return modifyResponse(resp)
 	}
 
 	http.ListenAndServe(":8080", proxy)
