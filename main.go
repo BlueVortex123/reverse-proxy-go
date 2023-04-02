@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 )
 
 func main() {
@@ -34,6 +37,28 @@ func main() {
 		fmt.Println(req.URL)
 	}
 
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		// For some reason the "Content-Type" header is missing here, but is present in the header of browser.
+		// if resp.Header.Get("Content-Type") == "application/json" {
+		fmt.Println("test")
+		if resp.StatusCode == http.StatusOK {
+			_, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+
+		}
+		// }
+		return nil
+	}
+
 	http.ListenAndServe(":8080", proxy)
+
+}
+
+func randomValue() string {
+	rand.Seed(time.Now().Unix())
+	randomValues := []string{"foo", "bar", "slug"}
+	return randomValues[rand.Intn(len(randomValues))]
 
 }
