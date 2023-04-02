@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -25,7 +26,10 @@ func main() {
 		Host:   "jsonplaceholder.typicode.com",
 	})
 
+	// director := proxy.Director
+
 	proxy.Director = func(req *http.Request) {
+		// director(req)
 		if req.Method == "GET" {
 			req.URL.Scheme = targetUrl.Scheme // for targe scheme error handling
 			req.URL.Host = targetUrl.Host     // for  http: no Host in request URL error handling
@@ -40,14 +44,26 @@ func main() {
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		// For some reason the "Content-Type" header is missing here, but is present in the header of browser.
 		// if resp.Header.Get("Content-Type") == "application/json" {
-		fmt.Println("test")
-		if resp.StatusCode == http.StatusOK {
-			_, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
 
+		// Commenting this conditionals because  the response status in currently 304.
+		// if resp.StatusCode == http.StatusOK {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
 		}
+
+		var data interface{}
+		err = json.Unmarshal(body, &data)
+		if err != nil {
+			return err //Getting unexpected end of JSON input error.
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return err //Getting EOF
+		}
+
+		// }
 		// }
 		return nil
 	}
