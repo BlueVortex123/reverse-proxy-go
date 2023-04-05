@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -8,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 	"time"
 )
 
@@ -27,55 +27,76 @@ func main() {
 		Host:   "jsonplaceholder.typicode.com",
 	})
 
-	director := proxy.Director
-
+	// director := proxy.Director
 	proxy.Director = func(req *http.Request) {
+		// director(req)
 		if req.Method == "GET" {
 			req.URL.Scheme = targetUrl.Scheme // for targe scheme error handling
 			req.URL.Host = targetUrl.Host     // for  http: no Host in request URL error handling
-			targetUrl.RawQuery = ""
-			req.URL.Path = "" + req.URL.Path
 			req.Host = targetUrl.Host
 
 		}
-		director(req)
-		// req.Header.Add("X-Project-Status", "WorkInProgress")
+		req.Header.Add("Accept", "application/json")
 		fmt.Println(req.URL)
 	}
 
-	modifyResponse := proxy.ModifyResponse
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		if resp.Header.Get("Content-Type") == "application/json; charset=utf-8" {
-
-			// Commenting this conditional because  the response status in currently 304.
-			// if resp.StatusCode == http.StatusOK {
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-
-			var data map[string]interface{}
-			err = json.Unmarshal(body, &data)
-			if err != nil {
-				return err //Getting unexpected end of JSON input error.
-			}
-
-			err = json.NewDecoder(resp.Body).Decode(&data)
-			if err != nil {
-				return err //Getting EOF
-			}
-
-			// }
-			encodedData, _ := json.Marshal(data)
-			resp.Body = strings.NewReader(string(encodedData)) // getting critical error here
-			resp.Header.Set("Content-Length", string(len(encodedData)))
-		}
-		return modifyResponse(resp)
+	proxy.Transport = &captureTransport{
+		Transport: http.DefaultTransport,
 	}
 
-	http.ListenAndServe(":8080", proxy)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://jsonplaceholder.typicode.com"+r.RequestURI, http.StatusTemporaryRedirect)
+	})
 
+	http.ListenAndServe(":8080", proxy)
+}
+
+type captureTransport struct {
+	Transport http.RoundTripper
+}
+
+func (ct *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := ct.Transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	if err != nil {
+		return nil, err
+	}
+
+	resp.Body.Close()
+
+	// if resp.Header.Get("Content-Type") == "application/json; charset=utf-8" && resp.ContentLength != 0 {
+
+	var data map[string]interface{}
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		// log.Printf("error decoding: %v", err)
+		// if e, ok := err.(*json.SyntaxError); ok {
+		// 	log.Printf("syntax error of byte offset %d", e.Offset)
+		// }
+		// log.Printf("Response: %q", body)
+		return nil, err
+	}
+
+	data["title"] = "test"
+	fmt.Printf("%v\n", data)
+
+	body, err = json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// ctx := req.Context()
+	// ctx = context.WithValue(ctx, "response_body", body)
+	// req = req.WithContext(ctx)
+
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	// }
+	return resp, nil
 }
 
 func randomValue() string {
