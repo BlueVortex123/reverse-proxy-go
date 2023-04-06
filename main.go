@@ -15,34 +15,27 @@ import (
 func main() {
 	targetUrl := &url.URL{
 		Scheme: "http",
-		Host:   "ergast.com",
+		Host:   "jsonplaceholder.typicode.com",
 	}
 
 	// getting 403 Forbidden for using only NewSingleHostReverseProxy.
-	// proxy := httputil.NewSingleHostReverseProxy(targetUrl)
-
-	// Switching to more complex definition
 	proxy := httputil.NewSingleHostReverseProxy(targetUrl)
 
-	// director := proxy.Director
-	// proxy.Director = func(req *http.Request) {
-	// 	// director(req)
-	// 	if req.Method == "GET" {
-	// 		req.URL.Scheme = targetUrl.Scheme // for targe scheme error handling
-	// 		req.URL.Host = targetUrl.Host     // for  http: no Host in request URL error handling
-	// 		req.Host = targetUrl.Host
+	// Using director for handling 403 Cloudfflare error
+	proxy.Director = func(req *http.Request) {
+		if req.Method == "GET" {
+			req.URL.Scheme = targetUrl.Scheme // for target scheme error handling
+			req.URL.Host = targetUrl.Host     // for  http: no Host in request URL error handling
+			req.Host = targetUrl.Host
 
-	// 	}
-	// 	req.Header.Add("Accept", "application/json")
-	// 	fmt.Println(req.URL)
-	// }
-
-	// proxy.Transport = &captureTransport{
-	// 	Transport: http.DefaultTransport,
-	// }
+		}
+		// 	req.Header.Add("Accept", "application/json")
+		fmt.Println(req.URL)
+	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "http://ergast.com"+r.RequestURI, http.StatusTemporaryRedirect)
+		r.Header.Set("CF-Connecting-IP", r.RemoteAddr) // for Cloudflare handling
+		http.Redirect(w, r, "http://jsonplaceholder.typicode.com"+r.RequestURI, http.StatusTemporaryRedirect)
 	})
 
 	proxy.Transport = &captureTransport{http.DefaultTransport}
